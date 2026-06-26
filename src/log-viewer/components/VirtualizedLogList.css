@@ -1,0 +1,57 @@
+.virtualized-log-list {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  flex: 1;
+  min-height: 0; /* Important: allows flex child to shrink below content size */
+  height: 100%; /* Fill parent container */
+}
+
+.virtualized-log-list--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 400px;
+}
+
+.virtualized-log-list__empty-message {
+  color: #9ca3af;
+  font-size: 14px;
+  text-align: center;
+}
+
+.virtualized-log-list__spacer {
+  position: relative;
+  width: 100%;
+}
+
+.virtualized-log-list__content {
+  position: relative;
+  width: 100%;
+}
+
+.virtualized-log-list__row {
+  will-change: transform;
+}
+
+/* Scrollbar styling */
+.virtualized-log-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.virtualized-log-list::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.virtualized-log-list::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 5px;
+}
+
+.virtualized-log-list::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
