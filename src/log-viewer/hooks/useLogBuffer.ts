@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { LogEntry } from '../../firehose/types';
 import type { LogBufferReturn } from '../types';
 
@@ -27,12 +27,12 @@ function findInsertionIndex(entries: LogEntry[], newEntry: LogEntry): number {
  * Custom hook for managing log entry buffer with deduplication and ordering
  * 
  * Features:
- * - O(1) deduplication using Map<string, LogEntry> by ID
+ * - O(1) deduplication using Set<string> by ID
  * - Maintains sorted array for timestamp-ordered display
  * - Binary search insertion to maintain timestamp ordering
  * - FIFO eviction when capacity exceeded
  * - Memoized ordered array to prevent unnecessary re-renders
- * - StrictMode compatible (no RAF batching complexity)
+ * - StrictMode compatible (state-based deduplication, no ref persistence issues)
  * 
  * @param capacity - Maximum number of entries to retain (default: 10000)
  * @returns Buffer interface with entries, add, clear, and stats functions
@@ -41,9 +41,7 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
   // Enforce minimum capacity
   const effectiveCapacity = Math.max(1000, Math.min(100000, capacity));
 
-  // Primary storage: Map for O(1) dedup, array for ordered display
-  // Use useMemo to recreate the Map only on mount (empty deps array)
-  const entriesById = useMemo(() => new Map<string, LogEntry>(), []);
+  // Primary storage: array for ordered display
   const [orderedEntries, setOrderedEntries] = useState<LogEntry[]>([]);
   
   // Statistics
@@ -52,13 +50,6 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
     totalReceived: 0,
     duplicateCount: 0,
   });
-
-  // Sync Map with state on unmount - clear Map when component unmounts
-  useEffect(() => {
-    return () => {
-      entriesById.clear();
-    };
-  }, [entriesById]);
 
   /**
    * Add entries to the buffer
@@ -78,24 +69,20 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
     setOrderedEntries((currentEntries) => {
       let newEntries = [...currentEntries];
       let duplicates = 0;
-
-      // StrictMode fix: If state was reset but Map still has entries,
-      // we need to rebuild from the Map first
-      if (newEntries.length === 0 && entriesById.size > 0) {
-        // State was reset but Map persisted - clear the Map to start fresh
-        entriesById.clear();
-      }
+      
+      // Rebuild Map from current state for duplicate checking
+      const currentIds = new Set(currentEntries.map(e => e.id));
 
       // Process each entry
       for (const entry of entries) {
         // Check for duplicate
-        if (entriesById.has(entry.id)) {
+        if (currentIds.has(entry.id)) {
           duplicates++;
           continue;
         }
 
-        // Add to Map for deduplication
-        entriesById.set(entry.id, entry);
+        // Add to the set for subsequent checks in this batch
+        currentIds.add(entry.id);
 
         // Find insertion point using binary search
         const insertIndex = findInsertionIndex(newEntries, entry);
@@ -115,12 +102,7 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
       // Apply capacity limit if exceeded (FIFO eviction)
       if (newEntries.length > effectiveCapacity) {
         const toEvict = newEntries.length - effectiveCapacity;
-        const evicted = newEntries.splice(0, toEvict);
-        
-        // Remove evicted entries from Map
-        for (const entry of evicted) {
-          entriesById.delete(entry.id);
-        }
+        newEntries.splice(0, toEvict);
         
         // Update evicted count
         setStats(prev => ({
@@ -131,14 +113,13 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
 
       return newEntries;
     });
-  }, [entriesById, effectiveCapacity]);
+  }, [effectiveCapacity]);
 
   /**
    * Clear all entries from the buffer
    */
   const clear = useCallback(() => {
-    // Clear storage
-    entriesById.clear();
+    // Clear storage (Map will be rebuilt from empty array)
     setOrderedEntries([]);
 
     // Reset stats (keep evicted count for historical tracking)
@@ -147,7 +128,7 @@ export function useLogBuffer(capacity: number = 10000): LogBufferReturn {
       totalReceived: 0,
       duplicateCount: 0,
     }));
-  }, [entriesById]);
+  }, []);
 
   /**
    * Memoized stats to prevent unnecessary re-renders
